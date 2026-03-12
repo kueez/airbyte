@@ -17,7 +17,9 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.inject.Singleton
 
 @Singleton
-class ClickhouseSqlGenerator {
+class ClickhouseSqlGenerator(
+    private val config: io.airbyte.integrations.destination.clickhouse.spec.ClickhouseConfiguration,
+) {
     private val log = KotlinLogging.logger {}
 
     fun createNamespace(namespace: String): String {
@@ -28,7 +30,6 @@ class ClickhouseSqlGenerator {
         tableName: TableName,
         tableSchema: StreamTableSchema,
         replace: Boolean,
-        useReplicatedEngine: Boolean = false,
     ): String {
         val forceCreateTable = if (replace) "OR REPLACE" else ""
 
@@ -66,14 +67,14 @@ class ClickhouseSqlGenerator {
                             // is invalid
                             COLUMN_NAME_AB_EXTRACTED_AT
                         }
-                    if (useReplicatedEngine) {
+                    if (config.useReplicatedEngine) {
                         "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', $versionColumn)"
                     } else {
                         "ReplacingMergeTree($versionColumn)"
                     }
                 }
                 else ->
-                    if (useReplicatedEngine) {
+                    if (config.useReplicatedEngine) {
                         "ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')"
                     } else {
                         "MergeTree()"
