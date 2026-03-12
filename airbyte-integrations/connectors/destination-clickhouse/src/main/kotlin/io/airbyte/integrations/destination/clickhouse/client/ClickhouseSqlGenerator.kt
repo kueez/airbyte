@@ -23,7 +23,9 @@ class ClickhouseSqlGenerator(
     private val log = KotlinLogging.logger {}
 
     fun createNamespace(namespace: String): String {
-        val engineClause = if (config.useReplicatedEngine) " ENGINE = Replicated" else ""
+        val engineClause = if (config.useReplicatedEngine)
+            " ENGINE = Replicated('/clickhouse/databases/$namespace', '{shard}', '{replica}')"
+        else ""
         return "CREATE DATABASE IF NOT EXISTS `$namespace`$engineClause;".andLog()
     }
 
