@@ -211,12 +211,10 @@ class ClickhouseAirbyteClient(
             val response = query(sql)
             val reader: ClickHouseBinaryFormatReader = client.newBinaryFormatReader(response)
             reader.next()
-            val generation = reader.getLong("generation")
-            return generation
+            return reader.getLong("generation") ?: 0L
         } catch (e: Exception) {
             log.error(e) { "Failed to retrieve the generation Id" }
-            // TODO: open question: Do we need to raise an error here or just return 0?
-            return 0
+            return 0L
         }
     }
 
