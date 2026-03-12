@@ -28,6 +28,7 @@ import io.airbyte.integrations.destination.clickhouse.client.ClickhouseSqlTypes.
 import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.inject.Singleton
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.runBlocking
 
 val log = KotlinLogging.logger {}
 
@@ -40,7 +41,36 @@ class ClickhouseAirbyteClient(
     private val client: ClickHouseClientRaw,
     private val sqlGenerator: ClickhouseSqlGenerator,
     private val tempTableNameGenerator: TempTableNameGenerator,
+    private val config: io.airbyte.integrations.destination.clickhouse.spec.ClickhouseConfiguration,
 ) : TableOperationsClient, TableSchemaEvolutionClient {
+
+    init {
+        if (config.useOnCluster && config.clusterName.isBlank()) {
+            runBlocking {
+                try {
+                    val resp = query(
+                        "SELECT substitution FROM system.macros WHERE macro = 'cluster' LIMIT 1"
+                    )
+                    val reader = client.newBinaryFormatReader(resp)
+                    if (reader.next() != null) {
+                        val detected = reader.getString("substitution")
+                        sqlGenerator.resolvedClusterName = detected
+                        log.info { "Auto-detected ClickHouse cluster name: '$detected'" }
+                    } else {
+                        log.warn {
+                            "use_on_cluster is enabled but no 'cluster' macro found in " +
+                                "system.macros. ON CLUSTER DDL will be disabled for this session."
+                        }
+                    }
+                } catch (e: Exception) {
+                    log.warn(e) {
+                        "Failed to auto-detect cluster name from system.macros. " +
+                            "ON CLUSTER DDL will be disabled for this session."
+                    }
+                }
+            }
+        }
+    }
 
     override suspend fun createNamespace(namespace: String) {
         val statement = sqlGenerator.createNamespace(namespace)

@@ -39,6 +39,12 @@ class ClickhouseAirbyteClientTest {
     private val client: ClickHouseClientRaw = mockk(relaxed = true)
     private val clickhouseSqlGenerator: ClickhouseSqlGenerator = mockk(relaxed = true)
     private val tempTableNameGenerator: TempTableNameGenerator = mockk(relaxed = true)
+    private val testConfig = io.airbyte.integrations.destination.clickhouse.spec.ClickhouseConfiguration(
+        hostname = "localhost", port = "8123", protocol = "http", database = "default",
+        username = "default", password = "", enableJson = false,
+        tunnelConfig = io.airbyte.cdk.ssh.SshNoTunnelMethod, recordWindowSize = 100_000L,
+        useReplicatedEngine = false, useOnCluster = false, clusterName = "",
+    )
 
     // Client
     private val clickhouseAirbyteClient =
@@ -47,6 +53,7 @@ class ClickhouseAirbyteClientTest {
                 client,
                 clickhouseSqlGenerator,
                 tempTableNameGenerator,
+                testConfig,
             )
         )
 

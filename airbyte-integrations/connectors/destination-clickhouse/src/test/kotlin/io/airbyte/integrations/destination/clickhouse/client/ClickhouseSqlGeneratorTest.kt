@@ -24,9 +24,17 @@ class ClickhouseSqlGeneratorTest {
         hostname = "localhost", port = "8123", protocol = "http", database = "default",
         username = "default", password = "", enableJson = false,
         tunnelConfig = io.airbyte.cdk.ssh.SshNoTunnelMethod, recordWindowSize = 100_000L,
-        useReplicatedEngine = false,
+        useReplicatedEngine = false, useOnCluster = false, clusterName = "",
     )
     private val clickhouseSqlGenerator = ClickhouseSqlGenerator(testConfig)
+
+    private val clusterConfig = io.airbyte.integrations.destination.clickhouse.spec.ClickhouseConfiguration(
+        hostname = "localhost", port = "8123", protocol = "http", database = "default",
+        username = "default", password = "", enableJson = false,
+        tunnelConfig = io.airbyte.cdk.ssh.SshNoTunnelMethod, recordWindowSize = 100_000L,
+        useReplicatedEngine = true, useOnCluster = true, clusterName = "default",
+    )
+    private val clusterSqlGenerator = ClickhouseSqlGenerator(clusterConfig)
 
     @Test
     fun testCreateNamespace() {
@@ -34,6 +42,51 @@ class ClickhouseSqlGeneratorTest {
         val expected = "CREATE DATABASE IF NOT EXISTS `$namespace`;"
         val actual = clickhouseSqlGenerator.createNamespace(namespace)
         assert(expected == actual) { "Expected: $expected, but got: $actual" }
+    }
+
+    @Test
+    fun `test createNamespace with ON CLUSTER`() {
+        val namespace = "test_namespace"
+        val actual = clusterSqlGenerator.createNamespace(namespace)
+        assert(actual.contains("ON CLUSTER 'default'")) {
+            "Expected ON CLUSTER 'default' in: $actual"
+        }
+        assert(actual.contains("ENGINE = Replicated")) {
+            "Expected ENGINE = Replicated in: $actual"
+        }
+    }
+
+    @Test
+    fun `test dropTable with ON CLUSTER`() {
+        val tableName = TableName("my_db", "my_table")
+        val actual = clusterSqlGenerator.dropTable(tableName)
+        assert(actual.contains("ON CLUSTER 'default'")) {
+            "Expected ON CLUSTER 'default' in: $actual"
+        }
+    }
+
+    @Test
+    fun `test dropTable without ON CLUSTER`() {
+        val tableName = TableName("my_db", "my_table")
+        val actual = clickhouseSqlGenerator.dropTable(tableName)
+        assert(!actual.contains("ON CLUSTER")) {
+            "Expected no ON CLUSTER in: $actual"
+        }
+    }
+
+    @Test
+    fun `test alterTable with ON CLUSTER`() {
+        val changeset = io.airbyte.cdk.load.component.ColumnChangeset(
+            columnsToAdd = mapOf("new_col" to io.airbyte.cdk.load.component.ColumnType("Int32", true)),
+            columnsToChange = emptyMap(),
+            columnsToDrop = emptyMap(),
+            columnsToRetain = emptyMap(),
+        )
+        val tableName = TableName("my_db", "my_table")
+        val actual = clusterSqlGenerator.alterTable(changeset, tableName)
+        assert(actual.contains("ON CLUSTER 'default'")) {
+            "Expected ON CLUSTER 'default' in: $actual"
+        }
     }
 
     @ParameterizedTest

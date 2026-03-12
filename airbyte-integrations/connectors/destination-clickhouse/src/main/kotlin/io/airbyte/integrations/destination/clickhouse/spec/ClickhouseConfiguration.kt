@@ -21,6 +21,8 @@ data class ClickhouseConfiguration(
     val tunnelConfig: SshTunnelMethodConfiguration,
     val recordWindowSize: Long?,
     val useReplicatedEngine: Boolean,
+    val useOnCluster: Boolean,
+    val clusterName: String,
 ) : DestinationConfiguration() {
     val endpoint = "$protocol://$hostname:$port"
     val resolvedDatabase = database.ifEmpty { Defaults.DATABASE_NAME }
@@ -54,7 +56,9 @@ class ClickhouseConfigurationFactory :
             enableJson = pojo.enableJson ?: false,
             tunnelConfig = pojo.getTunnelMethodValue() ?: SshNoTunnelMethod,
             recordWindowSize = pojo.recordWindowSize,
-            useReplicatedEngine = pojo.useReplicatedEngine ?: false,
+            useReplicatedEngine = pojo.useReplicatedEngine ?: true,
+            useOnCluster = pojo.useOnCluster ?: true,
+            clusterName = pojo.clusterName ?: "",
         )
     }
 
@@ -80,7 +84,11 @@ class ClickhouseConfigurationFactory :
             tunnelConfig = spec.getTunnelMethodValue() ?: SshNoTunnelMethod,
             recordWindowSize = spec.recordWindowSize,
             useReplicatedEngine =
-                overrides.getOrDefault("use_replicated_engine", spec.useReplicatedEngine.toString()).toBoolean(),
+                overrides.getOrDefault("use_replicated_engine", (spec.useReplicatedEngine ?: true).toString()).toBoolean(),
+            useOnCluster =
+                overrides.getOrDefault("use_on_cluster", (spec.useOnCluster ?: true).toString()).toBoolean(),
+            clusterName =
+                overrides.getOrDefault("cluster_name", spec.clusterName ?: ""),
         )
     }
 }

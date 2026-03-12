@@ -157,6 +157,8 @@ class ClickhouseCheckerTest {
                 tunnelConfig = SshNoTunnelMethod,
                 recordWindowSize = recordWindow,
                 useReplicatedEngine = false,
+                useOnCluster = false,
+                clusterName = "",
             )
     }
 }

@@ -34,6 +34,8 @@ sealed class ClickhouseSpecification : ConfigurationSpecification() {
     abstract fun getTunnelMethodValue(): SshTunnelMethodConfiguration?
     abstract val recordWindowSize: Long?
     abstract val useReplicatedEngine: Boolean?
+    abstract val useOnCluster: Boolean?
+    abstract val clusterName: String?
 }
 
 @Singleton
@@ -118,8 +120,28 @@ class ClickhouseSpecificationOss : ClickhouseSpecification() {
             "Required for multi-replica ClickHouse clusters using ClickHouse Keeper or ZooKeeper."
     )
     @get:JsonProperty("use_replicated_engine")
-    @get:JsonSchemaInject(json = """{"order": 9, "default": false}""")
-    override val useReplicatedEngine: Boolean? = false
+    @get:JsonSchemaInject(json = """{"order": 9, "default": true}""")
+    override val useReplicatedEngine: Boolean? = true
+
+    @get:JsonSchemaTitle("Use ON CLUSTER DDL")
+    @get:JsonPropertyDescription(
+        "Propagate all DDL statements (CREATE DATABASE, CREATE TABLE, DROP TABLE, ALTER TABLE) " +
+            "to every node using ON CLUSTER. Required for multi-replica setups to ensure " +
+            "databases are created on all nodes."
+    )
+    @get:JsonProperty("use_on_cluster")
+    @get:JsonSchemaInject(json = """{"order": 10, "default": true}""")
+    override val useOnCluster: Boolean? = true
+
+    @get:JsonSchemaTitle("Cluster Name")
+    @get:JsonPropertyDescription(
+        "ClickHouse cluster name used for ON CLUSTER DDL. Leave empty to auto-detect from " +
+            "system.macros (reads the 'cluster' macro). Override manually if your cluster " +
+            "macro is named differently."
+    )
+    @get:JsonProperty("cluster_name")
+    @get:JsonSchemaInject(json = """{"order": 11, "default": ""}""")
+    override val clusterName: String? = ""
 }
 
 @Singleton
@@ -204,8 +226,28 @@ open class ClickhouseSpecificationCloud : ClickhouseSpecification() {
             "Required for multi-replica ClickHouse clusters using ClickHouse Keeper or ZooKeeper."
     )
     @get:JsonProperty("use_replicated_engine")
-    @get:JsonSchemaInject(json = """{"order": 9, "default": false}""")
-    override val useReplicatedEngine: Boolean? = false
+    @get:JsonSchemaInject(json = """{"order": 9, "default": true}""")
+    override val useReplicatedEngine: Boolean? = true
+
+    @get:JsonSchemaTitle("Use ON CLUSTER DDL")
+    @get:JsonPropertyDescription(
+        "Propagate all DDL statements (CREATE DATABASE, CREATE TABLE, DROP TABLE, ALTER TABLE) " +
+            "to every node using ON CLUSTER. Required for multi-replica setups to ensure " +
+            "databases are created on all nodes."
+    )
+    @get:JsonProperty("use_on_cluster")
+    @get:JsonSchemaInject(json = """{"order": 10, "default": true}""")
+    override val useOnCluster: Boolean? = true
+
+    @get:JsonSchemaTitle("Cluster Name")
+    @get:JsonPropertyDescription(
+        "ClickHouse cluster name used for ON CLUSTER DDL. Leave empty to auto-detect from " +
+            "system.macros (reads the 'cluster' macro). Override manually if your cluster " +
+            "macro is named differently."
+    )
+    @get:JsonProperty("cluster_name")
+    @get:JsonSchemaInject(json = """{"order": 11, "default": ""}""")
+    override val clusterName: String? = ""
 }
 
 enum class ClickhouseConnectionProtocol(@get:JsonValue val value: String) {
