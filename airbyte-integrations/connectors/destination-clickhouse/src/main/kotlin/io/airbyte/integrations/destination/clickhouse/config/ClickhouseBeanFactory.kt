@@ -14,6 +14,7 @@ import io.airbyte.cdk.ssh.startTunnelAndGetEndpoint
 import io.airbyte.integrations.destination.clickhouse.spec.ClickhouseConfiguration
 import io.airbyte.integrations.destination.clickhouse.spec.ClickhouseConfigurationFactory
 import io.airbyte.integrations.destination.clickhouse.spec.ClickhouseSpecification
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Factory
 import jakarta.inject.Named
 import jakarta.inject.Singleton
@@ -21,6 +22,21 @@ import java.time.temporal.ChronoUnit
 
 @Factory
 class ClickhouseBeanFactory {
+    private val log = KotlinLogging.logger {}
+
+    companion object {
+        private val ENV_OVERRIDES = mapOf(
+            "CLICKHOUSE_HOST" to "hostname",
+            "CLICKHOUSE_PORT" to "port",
+            "CLICKHOUSE_USERNAME" to "username",
+            "CLICKHOUSE_PASSWORD" to "password",
+            "CLICKHOUSE_DATABASE" to "database",
+            "CLICKHOUSE_PROTOCOL" to "protocol",
+            "CLICKHOUSE_CLUSTER_NAME" to "cluster_name",
+            "CLICKHOUSE_USE_REPLICATED_ENGINE" to "use_replicated_engine",
+            "CLICKHOUSE_USE_ON_CLUSTER" to "use_on_cluster",
+        )
+    }
     /**
      * The endpoint the client connects through.
      *
@@ -67,8 +83,19 @@ class ClickhouseBeanFactory {
         specFactory: ConfigurationSpecificationSupplier<ClickhouseSpecification>,
     ): ClickhouseConfiguration {
         val spec = specFactory.get()
-
-        return configFactory.makeWithoutExceptionHandling(spec)
+        val envOverrides = buildMap {
+            ENV_OVERRIDES.forEach { (envKey, configKey) ->
+                System.getenv(envKey)?.let {
+                    put(configKey, it)
+                    log.info { "Config override from env: $envKey -> $configKey" }
+                }
+            }
+        }
+        return if (envOverrides.isEmpty()) {
+            configFactory.makeWithoutExceptionHandling(spec)
+        } else {
+            configFactory.makeWithOverrides(spec, envOverrides)
+        }
     }
 
     @Singleton

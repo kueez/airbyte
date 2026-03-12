@@ -64,7 +64,7 @@ class ClickhouseConfigurationFactory :
 
     fun makeWithOverrides(
         spec: ClickhouseSpecification,
-        overrides: Map<String, String> = emptyMap()
+        overrides: Map<String, String>,
     ): ClickhouseConfiguration {
         val protocol =
             when (spec) {
