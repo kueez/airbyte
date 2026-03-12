@@ -206,12 +206,20 @@ class ClickhouseAirbyteClient(
     }
 
     override suspend fun getGenerationId(tableName: TableName): Long {
+        return getGenerationIdInternal(tableName)
+    }
+
+    private suspend fun getGenerationIdInternal(tableName: TableName): Long {
         try {
             val sql = sqlGenerator.getGenerationId(tableName, "generation")
             val response = query(sql)
             val reader: ClickHouseBinaryFormatReader = client.newBinaryFormatReader(response)
             reader.next()
-            return reader.getLong("generation") ?: 0L
+            // getLong returns Java's boxed Long which can be null for missing/null column values.
+            // Cast to Any? first to bypass Micronaut's Kotlin non-null proxy interception.
+            @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
+            val raw = reader.getLong("generation") as? Number
+            return raw?.toLong() ?: 0L
         } catch (e: Exception) {
             log.error(e) { "Failed to retrieve the generation Id" }
             return 0L
