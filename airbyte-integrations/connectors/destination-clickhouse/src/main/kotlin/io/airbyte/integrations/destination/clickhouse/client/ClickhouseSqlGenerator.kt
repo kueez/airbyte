@@ -68,14 +68,14 @@ class ClickhouseSqlGenerator(
                             COLUMN_NAME_AB_EXTRACTED_AT
                         }
                     if (config.useReplicatedEngine) {
-                        "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', $versionColumn)"
+                        "ReplicatedReplacingMergeTree($versionColumn)"
                     } else {
                         "ReplacingMergeTree($versionColumn)"
                     }
                 }
                 else ->
                     if (config.useReplicatedEngine) {
-                        "ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')"
+                        "ReplicatedMergeTree()"
                     } else {
                         "MergeTree()"
                     }
