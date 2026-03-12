@@ -16,9 +16,10 @@ import com.fasterxml.jackson.module.afterburner.AfterburnerModule
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 
 object Jsons : ObjectMapper() {
-    // allow jackson to deserialize anything under 100 MiB
+    // allow jackson to deserialize anything under 500 MiB
     // (the default, at time of writing 2024-05-29, with jackson 2.15.2, is 20 MiB)
-    private const val JSON_MAX_LENGTH = 100 * 1024 * 1024
+    // 500 MiB needed to handle large MySQL BLOB/TEXT/JSON columns that can exceed 100 MiB
+    private const val JSON_MAX_LENGTH = 500 * 1024 * 1024
 
     init {
         registerKotlinModule()
