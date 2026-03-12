@@ -156,6 +156,7 @@ class ClickhouseCheckerTest {
                 enableJson = enableJson,
                 tunnelConfig = SshNoTunnelMethod,
                 recordWindowSize = recordWindow,
+                useReplicatedEngine = false,
             )
     }
 }

@@ -20,7 +20,13 @@ import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
 
 class ClickhouseSqlGeneratorTest {
-    private val clickhouseSqlGenerator = ClickhouseSqlGenerator()
+    private val testConfig = io.airbyte.integrations.destination.clickhouse.spec.ClickhouseConfiguration(
+        hostname = "localhost", port = "8123", protocol = "http", database = "default",
+        username = "default", password = "", enableJson = false,
+        tunnelConfig = io.airbyte.cdk.ssh.SshNoTunnelMethod, recordWindowSize = 100_000L,
+        useReplicatedEngine = false,
+    )
+    private val clickhouseSqlGenerator = ClickhouseSqlGenerator(testConfig)
 
     @Test
     fun testCreateNamespace() {
