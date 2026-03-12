@@ -24,8 +24,17 @@ class ClickhouseSqlGenerator(
 
     var resolvedClusterName: String? = config.clusterName.takeIf { it.isNotBlank() }
 
-    private val onCluster: String
+    // Used for CREATE DATABASE — always propagate when ON CLUSTER is enabled.
+    private val onClusterDatabase: String
         get() = if (config.useOnCluster)
+            resolvedClusterName?.let { " ON CLUSTER '$it'" } ?: ""
+        else ""
+
+    // Used for CREATE/DROP/ALTER TABLE — only use ON CLUSTER when NOT inside a Replicated
+    // database, because Replicated DB propagates table DDL automatically and ClickHouse
+    // rejects ON CLUSTER inside a Replicated database.
+    private val onClusterTable: String
+        get() = if (config.useOnCluster && !config.useReplicatedEngine)
             resolvedClusterName?.let { " ON CLUSTER '$it'" } ?: ""
         else ""
 
@@ -33,7 +42,7 @@ class ClickhouseSqlGenerator(
         val engineClause = if (config.useReplicatedEngine)
             " ENGINE = Replicated('/clickhouse/databases/$namespace', '{shard}', '{replica}')"
         else ""
-        return "CREATE DATABASE IF NOT EXISTS `$namespace`$onCluster$engineClause;".andLog()
+        return "CREATE DATABASE IF NOT EXISTS `$namespace`$onClusterDatabase$engineClause;".andLog()
     }
 
     fun createTable(
@@ -92,7 +101,7 @@ class ClickhouseSqlGenerator(
             }
 
         return """
-            CREATE $forceCreateTable TABLE `${tableName.namespace}`.`${tableName.name}`$onCluster (
+            CREATE $forceCreateTable TABLE `${tableName.namespace}`.`${tableName.name}`$onClusterTable (
               $COLUMN_NAME_AB_RAW_ID String NOT NULL,
               $COLUMN_NAME_AB_EXTRACTED_AT DateTime64(3) NOT NULL,
               $COLUMN_NAME_AB_META String NOT NULL,
@@ -107,7 +116,7 @@ class ClickhouseSqlGenerator(
     }
 
     fun dropTable(tableName: TableName): String =
-        "DROP TABLE IF EXISTS `${tableName.namespace}`.`${tableName.name}`$onCluster;".andLog()
+        "DROP TABLE IF EXISTS `${tableName.namespace}`.`${tableName.name}`$onClusterTable;".andLog()
 
     fun exchangeTable(sourceTableName: TableName, targetTableName: TableName): String =
         """
@@ -168,7 +177,7 @@ class ClickhouseSqlGenerator(
     fun alterTable(alterationSummary: ColumnChangeset, tableName: TableName): String {
         val builder =
             StringBuilder()
-                .append("ALTER TABLE `${tableName.namespace}`.`${tableName.name}`$onCluster")
+                .append("ALTER TABLE `${tableName.namespace}`.`${tableName.name}`$onClusterTable")
                 .appendLine()
         alterationSummary.columnsToAdd.forEach { (columnName, columnType) ->
             builder.append(" ADD COLUMN `$columnName` ${columnType.typeDecl()},")

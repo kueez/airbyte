@@ -47,10 +47,12 @@ object Utils {
     }
 
     fun getClickhouseAirbyteClient(spec: ConfigurationSpecification): ClickhouseAirbyteClient {
+        val config = specToConfig(spec)
         return ClickhouseAirbyteClient(
-            getClickhouseClient(spec),
-            ClickhouseSqlGenerator(),
+            getClickhouseClient(config),
+            ClickhouseSqlGenerator(config),
             DefaultTempTableNameGenerator(),
+            config,
         )
     }
 }

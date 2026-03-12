@@ -57,16 +57,39 @@ class ClickhouseSqlGeneratorTest {
     }
 
     @Test
-    fun `test dropTable with ON CLUSTER`() {
+    fun `test createTable does NOT use ON CLUSTER inside Replicated database`() {
+        // When useReplicatedEngine=true, Replicated DB handles table propagation automatically.
+        // ON CLUSTER on CREATE TABLE inside a Replicated database causes an error in ClickHouse.
         val tableName = TableName("my_db", "my_table")
-        val actual = clusterSqlGenerator.dropTable(tableName)
-        assert(actual.contains("ON CLUSTER 'default'")) {
-            "Expected ON CLUSTER 'default' in: $actual"
+        val actual = clusterSqlGenerator.createTable(
+            tableName,
+            io.airbyte.cdk.load.schema.model.StreamTableSchema(
+                tableNames = io.airbyte.cdk.load.schema.model.TableNames(rawTableName = null, tempTableName = null, finalTableName = tableName),
+                columnSchema = io.airbyte.cdk.load.schema.model.ColumnSchema(
+                    inputSchema = emptyMap(),
+                    inputToFinalColumnNames = emptyMap(),
+                    finalSchema = emptyMap(),
+                ),
+                importType = io.airbyte.cdk.load.command.Append,
+            ),
+            false,
+        )
+        assert(!actual.contains("ON CLUSTER")) {
+            "Expected NO ON CLUSTER in CREATE TABLE inside Replicated DB: $actual"
         }
     }
 
     @Test
-    fun `test dropTable without ON CLUSTER`() {
+    fun `test dropTable does NOT use ON CLUSTER inside Replicated database`() {
+        val tableName = TableName("my_db", "my_table")
+        val actual = clusterSqlGenerator.dropTable(tableName)
+        assert(!actual.contains("ON CLUSTER")) {
+            "Expected NO ON CLUSTER in DROP TABLE inside Replicated DB: $actual"
+        }
+    }
+
+    @Test
+    fun `test dropTable without ON CLUSTER when disabled`() {
         val tableName = TableName("my_db", "my_table")
         val actual = clickhouseSqlGenerator.dropTable(tableName)
         assert(!actual.contains("ON CLUSTER")) {
@@ -75,7 +98,7 @@ class ClickhouseSqlGeneratorTest {
     }
 
     @Test
-    fun `test alterTable with ON CLUSTER`() {
+    fun `test alterTable does NOT use ON CLUSTER inside Replicated database`() {
         val changeset = io.airbyte.cdk.load.component.ColumnChangeset(
             columnsToAdd = mapOf("new_col" to io.airbyte.cdk.load.component.ColumnType("Int32", true)),
             columnsToChange = emptyMap(),
@@ -84,8 +107,8 @@ class ClickhouseSqlGeneratorTest {
         )
         val tableName = TableName("my_db", "my_table")
         val actual = clusterSqlGenerator.alterTable(changeset, tableName)
-        assert(actual.contains("ON CLUSTER 'default'")) {
-            "Expected ON CLUSTER 'default' in: $actual"
+        assert(!actual.contains("ON CLUSTER")) {
+            "Expected NO ON CLUSTER in ALTER TABLE inside Replicated DB: $actual"
         }
     }
 
