@@ -5,6 +5,7 @@
 package io.airbyte.integrations.destination.clickhouse.check
 
 import com.clickhouse.client.api.Client
+import com.clickhouse.client.api.command.CommandSettings
 import com.clickhouse.client.api.insert.InsertResponse
 import com.clickhouse.data.ClickHouseFormat
 import io.airbyte.cdk.ssh.SshNoTunnelMethod
@@ -40,7 +41,8 @@ class ClickhouseCheckerTest {
 
     @BeforeEach
     fun setup() {
-        every { client.execute(any()) } returns mockk(relaxed = true)
+        every { client.execute(any<String>()) } returns mockk(relaxed = true)
+        every { client.execute(any<String>(), any<CommandSettings>()) } returns mockk(relaxed = true)
         every { insertResponse.writtenRows } returns 1
         every { client.insert(any(), any<InputStream>(), any()) } returns
             CompletableFuture.completedFuture(insertResponse)
@@ -54,7 +56,8 @@ class ClickhouseCheckerTest {
 
         verify {
             client.execute(
-                "CREATE TABLE IF NOT EXISTS ${config.database}.${checker.tableName} (test UInt8) ENGINE = MergeTree ORDER BY ()"
+                "CREATE TABLE IF NOT EXISTS ${config.database}.${checker.tableName} (test UInt8) ENGINE = MergeTree ORDER BY ()",
+                any<CommandSettings>(),
             )
         }
         verify {
@@ -102,7 +105,7 @@ class ClickhouseCheckerTest {
     @Test
     fun `check table creation failure`() {
         val exception = Exception("blam")
-        every { client.execute(any()) } throws exception
+        every { client.execute(any<String>(), any<CommandSettings>()) } throws exception
 
         val caught = assertThrows<Exception> { checker.check() }
         assertEquals(exception, caught)
@@ -121,13 +124,18 @@ class ClickhouseCheckerTest {
     fun `cleanup happy path - drops the check table`() {
         checker.cleanup()
 
-        verify { client.execute("DROP TABLE IF EXISTS ${config.database}.${checker.tableName}") }
+        verify {
+            client.execute(
+                "DROP TABLE IF EXISTS ${config.database}.${checker.tableName}",
+                any<CommandSettings>(),
+            )
+        }
     }
 
     @Test
     fun `cleanup drop table failure`() {
         val exception = Exception("blam")
-        every { client.execute(any()) } throws exception
+        every { client.execute(any<String>(), any<CommandSettings>()) } throws exception
 
         val caught = assertThrows<Exception> { checker.cleanup() }
         assertEquals(exception, caught)

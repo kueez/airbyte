@@ -5,6 +5,7 @@
 package io.airbyte.integrations.destination.clickhouse.check
 
 import com.clickhouse.client.api.Client
+import com.clickhouse.client.api.command.CommandSettings
 import com.clickhouse.data.ClickHouseFormat
 import com.google.common.annotations.VisibleForTesting
 import io.airbyte.cdk.load.check.DestinationChecker
@@ -26,11 +27,18 @@ class ClickhouseChecker(
 
         val resolvedTableName = "${config.database}.$tableName"
 
+        // Use distributed_ddl_task_timeout=30 so DDL inside Replicated databases
+        // fails fast (30s) instead of the default 180s if a node is slow.
+        val ddlSettings = CommandSettings().apply {
+            serverSetting("distributed_ddl_task_timeout", "30")
+        }
+
         client
             .execute(
-                "CREATE TABLE IF NOT EXISTS $resolvedTableName (test UInt8) ENGINE = MergeTree ORDER BY ()"
+                "CREATE TABLE IF NOT EXISTS $resolvedTableName (test UInt8) ENGINE = MergeTree ORDER BY ()",
+                ddlSettings,
             )
-            .get(10, TimeUnit.SECONDS)
+            .get(60, TimeUnit.SECONDS)
 
         val insert =
             client
@@ -47,9 +55,12 @@ class ClickhouseChecker(
     }
 
     override fun cleanup() {
+        val ddlSettings = CommandSettings().apply {
+            serverSetting("distributed_ddl_task_timeout", "30")
+        }
         client
-            .execute("DROP TABLE IF EXISTS ${config.database}.$tableName")
-            .get(10, TimeUnit.SECONDS)
+            .execute("DROP TABLE IF EXISTS ${config.database}.$tableName", ddlSettings)
+            .get(60, TimeUnit.SECONDS)
     }
 
     object Constants {
