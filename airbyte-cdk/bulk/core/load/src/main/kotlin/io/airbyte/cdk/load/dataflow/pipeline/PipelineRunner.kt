@@ -65,8 +65,22 @@ class PipelineRunner(
         reconciler.flushCompleteStates()
 
         if (store.hasStates()) {
+            val maxRetries = 5
+            val retryDelayMs = 2000L
+            for (attempt in 1..maxRetries) {
+                log.info { "Unflushed states detected, waiting ${retryDelayMs}ms before retry (attempt $attempt/$maxRetries)..." }
+                Thread.sleep(retryDelayMs)
+                reconciler.flushCompleteStates()
+                if (!store.hasStates()) {
+                    log.info { "All states flushed after $attempt retry attempt(s)." }
+                    break
+                }
+            }
+        }
+
+        if (store.hasStates()) {
             store.logStateInfo()
-            log.warn { "Sync completed with unflushed states detected (non-fatal, data was written successfully)." }
+            log.warn { "Sync completed with unflushed states after retries (non-fatal, data was written successfully)." }
         }
 
         log.info { "Destination Pipeline Completed — Successfully" }
