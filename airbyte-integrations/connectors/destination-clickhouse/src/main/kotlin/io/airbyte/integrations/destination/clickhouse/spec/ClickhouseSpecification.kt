@@ -33,6 +33,7 @@ sealed class ClickhouseSpecification : ConfigurationSpecification() {
     abstract val enableJson: Boolean?
     abstract fun getTunnelMethodValue(): SshTunnelMethodConfiguration?
     abstract val recordWindowSize: Long?
+    abstract val useReplicatedEngine: Boolean?
 }
 
 @Singleton
@@ -110,6 +111,15 @@ class ClickhouseSpecificationOss : ClickhouseSpecification() {
     @get:JsonProperty("record_window_size")
     @get:JsonSchemaInject(json = """{"order": 8}""")
     override val recordWindowSize: Long? = RECORDS_PER_AGGREGATE
+
+    @get:JsonSchemaTitle("Use Replicated Engine")
+    @get:JsonPropertyDescription(
+        "Create tables using ReplicatedMergeTree instead of MergeTree. " +
+            "Required for multi-replica ClickHouse clusters using ClickHouse Keeper or ZooKeeper."
+    )
+    @get:JsonProperty("use_replicated_engine")
+    @get:JsonSchemaInject(json = """{"order": 9, "default": false}""")
+    override val useReplicatedEngine: Boolean? = false
 }
 
 @Singleton
@@ -187,6 +197,15 @@ open class ClickhouseSpecificationCloud : ClickhouseSpecification() {
     @get:JsonProperty("record_window_size")
     @get:JsonSchemaInject(json = """{"order": 8}""")
     override val recordWindowSize: Long? = RECORDS_PER_AGGREGATE
+
+    @get:JsonSchemaTitle("Use Replicated Engine")
+    @get:JsonPropertyDescription(
+        "Create tables using ReplicatedMergeTree instead of MergeTree. " +
+            "Required for multi-replica ClickHouse clusters using ClickHouse Keeper or ZooKeeper."
+    )
+    @get:JsonProperty("use_replicated_engine")
+    @get:JsonSchemaInject(json = """{"order": 9, "default": false}""")
+    override val useReplicatedEngine: Boolean? = false
 }
 
 enum class ClickhouseConnectionProtocol(@get:JsonValue val value: String) {

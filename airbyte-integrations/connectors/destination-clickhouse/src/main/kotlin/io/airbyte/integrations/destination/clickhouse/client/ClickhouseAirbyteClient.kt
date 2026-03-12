@@ -40,6 +40,7 @@ class ClickhouseAirbyteClient(
     private val client: ClickHouseClientRaw,
     private val sqlGenerator: ClickhouseSqlGenerator,
     private val tempTableNameGenerator: TempTableNameGenerator,
+    private val config: io.airbyte.integrations.destination.clickhouse.spec.ClickhouseConfiguration,
 ) : TableOperationsClient, TableSchemaEvolutionClient {
 
     override suspend fun createNamespace(namespace: String) {
@@ -59,6 +60,7 @@ class ClickhouseAirbyteClient(
                 tableName,
                 stream.tableSchema,
                 replace,
+                config.useReplicatedEngine,
             ),
         )
     }
@@ -174,6 +176,7 @@ class ClickhouseAirbyteClient(
                 tempTableName,
                 stream.tableSchema,
                 true,
+                config.useReplicatedEngine,
             ),
         )
         val columnNames =
