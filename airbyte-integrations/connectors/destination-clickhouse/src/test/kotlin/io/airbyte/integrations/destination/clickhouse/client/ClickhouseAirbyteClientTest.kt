@@ -131,6 +131,7 @@ class ClickhouseAirbyteClientTest {
                         every { getPrimaryKey() } returns emptyList()
                         every { getCursor() } returns emptyList()
                     }
+                every { shouldBeTruncatedAtEndOfSync() } returns false
             }
         clickhouseAirbyteClient.applyChangeset(
             stream,
@@ -193,6 +194,7 @@ class ClickhouseAirbyteClientTest {
                         every { namespace } returns "my_namespace"
                     }
                 every { tableSchema } returns tableSchema1
+                every { shouldBeTruncatedAtEndOfSync() } returns false
             }
         clickhouseAirbyteClient.applyChangeset(
             stream,

@@ -167,6 +167,18 @@ class ClickhouseAirbyteClient(
         expectedColumns: TableColumns,
         columnChangeset: ColumnChangeset,
     ) {
+        // For overwrite/clear syncs, existing data will be replaced anyway.
+        // Skip the expensive copy-then-swap and just drop+recreate the table empty.
+        if (stream.shouldBeTruncatedAtEndOfSync()) {
+            log.info {
+                "Stream ${tableName.namespace}:${tableName.name} is an overwrite sync — " +
+                    "dropping and recreating table instead of copying existing data."
+            }
+            execute(sqlGenerator.dropTable(tableName))
+            execute(sqlGenerator.createTable(tableName, stream.tableSchema, false))
+            return
+        }
+
         // This is a bit hacky, and relies on the fact that we make all
         // non-pk/cursor columns nullable.
         // We assume that if any column changes its nullability,
