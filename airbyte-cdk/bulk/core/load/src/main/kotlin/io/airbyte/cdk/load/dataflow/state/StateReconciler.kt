@@ -50,6 +50,13 @@ class StateReconciler(
         }
     }
 
+    /** Force-emit all remaining states regardless of histogram completeness. */
+    fun forceFlushRemainingStates(): Int {
+        val drained = stateStore.drainAllStates()
+        drained.forEach { publish(it.asProtocolMessage()) }
+        return drained.size
+    }
+
     fun flushEmittedStats() {
         val stats = emittedStatsStore.getStats()
         stats?.let { stats.forEach(::publish) }

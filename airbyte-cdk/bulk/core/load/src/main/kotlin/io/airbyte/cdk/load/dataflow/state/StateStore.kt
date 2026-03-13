@@ -123,6 +123,31 @@ class StateStore(
         }
     }
 
+    /** Force-drain all remaining states regardless of histogram completeness. */
+    fun drainAllStates(): List<CheckpointMessage> {
+        return when (mode.get()) {
+            null -> emptyList()
+            Mode.GLOBAL -> {
+                val drained = mutableListOf<CheckpointMessage>()
+                while (globalStates.isNotEmpty()) {
+                    val key = globalStates.firstKey()
+                    globalStates.remove(key)?.let { drained.add(it) }
+                }
+                drained
+            }
+            Mode.STREAM -> {
+                val drained = mutableListOf<CheckpointMessage>()
+                for ((_, st) in streamStates.entries) {
+                    while (st.queue.isNotEmpty()) {
+                        val key = st.queue.firstKey()
+                        st.queue.remove(key)?.let { drained.add(it) }
+                    }
+                }
+                drained
+            }
+        }
+    }
+
     fun logStateInfo() {
         when (mode.get()) {
             null -> {

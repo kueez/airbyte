@@ -80,7 +80,11 @@ class PipelineRunner(
 
         if (store.hasStates()) {
             store.logStateInfo()
-            log.warn { "Sync completed with unflushed states after retries (non-fatal, data was written successfully)." }
+            val flushed = reconciler.forceFlushRemainingStates()
+            log.warn {
+                "Sync completed with unflushed states after retries. Force-emitted $flushed " +
+                    "remaining state(s) to preserve CDC resumption position (data was written successfully)."
+            }
         }
 
         log.info { "Destination Pipeline Completed — Successfully" }
