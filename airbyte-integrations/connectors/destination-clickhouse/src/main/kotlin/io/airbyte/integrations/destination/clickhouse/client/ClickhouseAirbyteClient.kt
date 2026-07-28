@@ -84,6 +84,11 @@ class ClickhouseAirbyteClient(
         columnNameMapping: ColumnNameMapping,
         replace: Boolean
     ) {
+        // Replace via explicit DROP ... SYNC + CREATE rather than CREATE OR REPLACE, which is unsafe
+        // on the Replicated database engine (it can orphan hidden `_tmp_replace_` tables in Keeper).
+        if (replace) {
+            execute(sqlGenerator.dropTable(tableName))
+        }
         execute(
             sqlGenerator.createTable(
                 tableName,

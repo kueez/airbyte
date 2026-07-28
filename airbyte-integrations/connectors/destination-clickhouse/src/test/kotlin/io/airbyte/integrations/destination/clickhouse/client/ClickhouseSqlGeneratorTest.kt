@@ -97,6 +97,49 @@ class ClickhouseSqlGeneratorTest {
         }
     }
 
+    private fun emptySchema(tableName: TableName) =
+        io.airbyte.cdk.load.schema.model.StreamTableSchema(
+            tableNames = io.airbyte.cdk.load.schema.model.TableNames(
+                rawTableName = null, tempTableName = null, finalTableName = tableName
+            ),
+            columnSchema = io.airbyte.cdk.load.schema.model.ColumnSchema(
+                inputSchema = emptyMap(),
+                inputToFinalColumnNames = emptyMap(),
+                finalSchema = emptyMap(),
+            ),
+            importType = io.airbyte.cdk.load.command.Append,
+        )
+
+    @Test
+    fun `test createTable replace uses plain CREATE not CREATE OR REPLACE`() {
+        // CREATE OR REPLACE on the Replicated database engine orphans _tmp_replace_ tables in
+        // Keeper; the client drops first instead, so the generated DDL must be a plain CREATE.
+        val tableName = TableName("my_db", "my_table")
+        val actual = clusterSqlGenerator.createTable(tableName, emptySchema(tableName), true)
+        assert(!actual.contains("OR REPLACE")) { "Expected NO OR REPLACE in: $actual" }
+        assert(actual.contains("CREATE TABLE")) { "Expected CREATE TABLE in: $actual" }
+    }
+
+    @Test
+    fun `test createTable non-replace uses IF NOT EXISTS`() {
+        val tableName = TableName("my_db", "my_table")
+        val actual = clickhouseSqlGenerator.createTable(tableName, emptySchema(tableName), false)
+        assert(actual.contains("CREATE TABLE IF NOT EXISTS")) {
+            "Expected CREATE TABLE IF NOT EXISTS in: $actual"
+        }
+    }
+
+    @Test
+    fun `test dropTable uses SYNC for synchronous Keeper cleanup`() {
+        val tableName = TableName("my_db", "my_table")
+        assert(clickhouseSqlGenerator.dropTable(tableName).contains("SYNC")) {
+            "Expected SYNC in DROP TABLE"
+        }
+        assert(clusterSqlGenerator.dropTable(tableName).contains("SYNC")) {
+            "Expected SYNC in DROP TABLE (replicated)"
+        }
+    }
+
     @Test
     fun `test alterTable does NOT use ON CLUSTER inside Replicated database`() {
         val changeset = io.airbyte.cdk.load.component.ColumnChangeset(

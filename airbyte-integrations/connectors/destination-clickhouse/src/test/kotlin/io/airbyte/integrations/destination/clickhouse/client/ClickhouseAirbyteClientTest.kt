@@ -260,6 +260,42 @@ class ClickhouseAirbyteClientTest {
     }
 
     @Test
+    fun `test createTable with replace drops before creating`() = runTest {
+        // Replace must be DROP ... SYNC + CREATE (not CREATE OR REPLACE) to avoid Keeper orphans.
+        val tableName = TableName("db", "t")
+        val dropSql = "DROP TABLE IF EXISTS `db`.`t` SYNC"
+        val createSql = "CREATE TABLE `db`.`t` (...)"
+        val schema = mockk<StreamTableSchema>(relaxed = true)
+        val stream = mockk<DestinationStream> { every { tableSchema } returns schema }
+        every { clickhouseSqlGenerator.dropTable(tableName) } returns dropSql
+        every { clickhouseSqlGenerator.createTable(tableName, schema, true) } returns createSql
+        coEvery { clickhouseAirbyteClient.execute(dropSql) } returns mockk()
+        coEvery { clickhouseAirbyteClient.execute(createSql) } returns mockk()
+
+        clickhouseAirbyteClient.createTable(stream, tableName, ColumnNameMapping(mapOf()), true)
+
+        coVerifyOrder {
+            clickhouseAirbyteClient.execute(dropSql)
+            clickhouseAirbyteClient.execute(createSql)
+        }
+    }
+
+    @Test
+    fun `test createTable without replace does not drop`() = runTest {
+        val tableName = TableName("db", "t")
+        val createSql = "CREATE TABLE IF NOT EXISTS `db`.`t` (...)"
+        val schema = mockk<StreamTableSchema>(relaxed = true)
+        val stream = mockk<DestinationStream> { every { tableSchema } returns schema }
+        every { clickhouseSqlGenerator.createTable(tableName, schema, false) } returns createSql
+        coEvery { clickhouseAirbyteClient.execute(createSql) } returns mockk()
+
+        clickhouseAirbyteClient.createTable(stream, tableName, ColumnNameMapping(mapOf()), false)
+
+        verify(exactly = 0) { clickhouseSqlGenerator.dropTable(any()) }
+        coVerify { clickhouseAirbyteClient.execute(createSql) }
+    }
+
+    @Test
     fun `test getAirbyteSchemaWithClickhouseType with simple schema`() {
         val columns = LinkedHashMap.newLinkedHashMap<String, FieldType>(1)
         columns["field 1"] = FieldType(StringType, true)

@@ -50,7 +50,11 @@ class ClickhouseSqlGenerator(
         tableSchema: StreamTableSchema,
         replace: Boolean,
     ): String {
-        val forceCreateTable = if (replace) "OR REPLACE" else ""
+        // Avoid CREATE OR REPLACE on the Replicated database engine: it stages a hidden
+        // `_tmp_replace_<hash>` table whose Keeper metadata can be left orphaned (DROP then fails
+        // with "No node"). When replacing, the client drops the table first (DROP ... SYNC) and we
+        // emit a plain CREATE here; otherwise we create only if missing.
+        val ifNotExists = if (replace) "" else "IF NOT EXISTS "
 
         val finalSchema = tableSchema.columnSchema.finalSchema
         val columnDeclarations =
@@ -101,7 +105,7 @@ class ClickhouseSqlGenerator(
             }
 
         return """
-            CREATE $forceCreateTable TABLE `${tableName.namespace}`.`${tableName.name}`$onClusterTable (
+            CREATE TABLE $ifNotExists`${tableName.namespace}`.`${tableName.name}`$onClusterTable (
               $COLUMN_NAME_AB_RAW_ID String NOT NULL,
               $COLUMN_NAME_AB_EXTRACTED_AT DateTime64(3) NOT NULL,
               $COLUMN_NAME_AB_META String NOT NULL,
@@ -115,8 +119,11 @@ class ClickhouseSqlGenerator(
             .andLog()
     }
 
+    // SYNC makes the drop wait for the table (and its Keeper metadata) to be fully removed before
+    // returning, so a subsequent CREATE/EXCHANGE on the same name does not race the async cleanup.
     fun dropTable(tableName: TableName): String =
-        "DROP TABLE IF EXISTS `${tableName.namespace}`.`${tableName.name}`$onClusterTable;".andLog()
+        "DROP TABLE IF EXISTS `${tableName.namespace}`.`${tableName.name}`$onClusterTable SYNC;"
+            .andLog()
 
     fun exchangeTable(sourceTableName: TableName, targetTableName: TableName): String =
         """

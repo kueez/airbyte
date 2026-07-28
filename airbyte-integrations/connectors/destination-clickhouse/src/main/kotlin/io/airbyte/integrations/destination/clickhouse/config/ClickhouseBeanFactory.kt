@@ -63,6 +63,15 @@ class ClickhouseBeanFactory {
                 .compressClientRequest(true)
                 .setClientName("airbyte-v2")
                 .setConnectTimeout(5, ChronoUnit.MINUTES)
+                // DDL safety on the Replicated database engine behind a non-deterministic load
+                // balancer. Lift the drop-size guard so overwrite swaps can drop the old (possibly
+                // large) table; make drops wait for Keeper cleanup; and wait for cluster-wide DDL so
+                // a follow-up statement landing on another replica sees the prior DDL.
+                .serverSetting("max_table_size_to_drop", "0")
+                .serverSetting("max_partition_size_to_drop", "0")
+                .serverSetting("database_atomic_wait_for_drop_and_detach_synchronously", "1")
+                .serverSetting("distributed_ddl_task_timeout", "300")
+                .serverSetting("distributed_ddl_output_mode", "null_status_on_timeout_only_active")
 
         if (config.enableJson) {
             builder
