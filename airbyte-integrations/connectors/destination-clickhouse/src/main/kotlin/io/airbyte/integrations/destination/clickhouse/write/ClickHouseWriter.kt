@@ -29,8 +29,16 @@ class ClickHouseWriter(
     private lateinit var initialStatuses: Map<DestinationStream, DirectLoadInitialStatus>
 
     override suspend fun setup() {
+        // Deduplicate namespaces before creating them. CREATE DATABASE IF NOT EXISTS is a cheap
+        // local no-op on single-node ClickHouse, but on the Replicated database engine it is issued
+        // ON CLUSTER (the database cannot self-propagate its own creation), so every call costs a
+        // Keeper-coordinated entry in /clickhouse/task_queue/ddl that all replicas must process
+        // with distributed_ddl.pool_size = 1. Without distinct(), a connection emits one
+        // identical statement per stream on every sync -- 51 for a 51-stream connection, 50 of
+        // them redundant.
         names.streams
             .map { it.tableSchema.tableNames.finalTableName!!.namespace }
+            .distinct()
             .forEach { clickhouseClient.createNamespace(it) }
 
         initialStatuses = stateGatherer.gatherInitialStatus()
