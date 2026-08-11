@@ -335,6 +335,47 @@ class ClickhouseAirbyteClientTest {
         Assertions.assertEquals(expected, actual)
     }
 
+    @Test
+    fun `countTable skips the counting query when the table is absent`() = runTest {
+        // Regression guard for the UNKNOWN_TABLE log storm: the status gatherer probes a temp
+        // table that is absent by design on every sync. countTable must decide "missing" via
+        // EXISTS TABLE, never by firing SELECT count(1) against it and swallowing the server error.
+        val absentTable = TableName("db", "leftover_tmp_deadbeef")
+        val existsResponse = mockk<QueryResponse>(relaxed = true)
+        coEvery { client.query(match { it.startsWith("EXISTS TABLE") }) } returns
+            CompletableFuture.completedFuture(existsResponse)
+        every { client.newBinaryFormatReader(existsResponse) } returns
+            mockk(relaxed = true) { every { getInteger("result") } returns 0 }
+
+        val result = clickhouseAirbyteClient.countTable(absentTable)
+
+        Assertions.assertNull(result)
+        // Existence was probed with EXISTS TABLE...
+        coVerify { client.query(match { it.startsWith("EXISTS TABLE") }) }
+        // ...and no counting query was ever generated against the absent table.
+        verify(exactly = 0) { clickhouseSqlGenerator.countTable(any(), any()) }
+    }
+
+    @Test
+    fun `countTable returns the row count when the table exists`() = runTest {
+        val table = TableName("db", "real_table")
+        val countSql = "SELECT count(1) cnt FROM `db`.`real_table`;"
+        val existsResponse = mockk<QueryResponse>(relaxed = true)
+        val countResponse = mockk<QueryResponse>(relaxed = true)
+        coEvery { client.query(match { it.startsWith("EXISTS TABLE") }) } returns
+            CompletableFuture.completedFuture(existsResponse)
+        every { client.newBinaryFormatReader(existsResponse) } returns
+            mockk(relaxed = true) { every { getInteger("result") } returns 1 }
+        every { clickhouseSqlGenerator.countTable(table, "cnt") } returns countSql
+        coEvery { client.query(countSql) } returns CompletableFuture.completedFuture(countResponse)
+        every { client.newBinaryFormatReader(countResponse) } returns
+            mockk(relaxed = true) { every { getLong("cnt") } returns 42L }
+
+        val result = clickhouseAirbyteClient.countTable(table)
+
+        Assertions.assertEquals(42L, result)
+    }
+
     companion object {
         // Constants
         private const val DUMMY_SENTENCE = "SELECT 1"

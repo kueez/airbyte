@@ -192,15 +192,15 @@ WHERE event_time > now() - INTERVAL 3 HOUR AND type > 1 AND user = '<airbyte_ch_
 GROUP BY exception_code ORDER BY 2 DESC;
 ```
 
-On (5), expect a steady stream of `exception_code = 60` (`UNKNOWN_TABLE`). That is a **known
-open issue, not a regression**: per stream per sync the destination probes for a leftover temp
-table with `SELECT count(1) FROM <db>.<squeezed_name><md5>` and reads the resulting error as
-"no leftover table" — see `countTable` in
-[`ClickhouseSqlGenerator.kt`](src/main/kotlin/io/airbyte/integrations/destination/clickhouse/client/ClickhouseSqlGenerator.kt),
-whose caller swallows the exception. Data is unaffected; the cost is that ClickHouse logs each
-miss with a ~30-frame stack trace **twice**, which is hundreds of thousands of log lines a day
-burying real errors. The real fix is `EXISTS TABLE` (or a `system.tables` lookup) instead of a
-counting query on the error path.
+On (5), `exception_code = 60` (`UNKNOWN_TABLE`) should now be **~0**. This was previously a
+known open issue and is **fixed as of the EXISTS-TABLE probe**: `countTable` in
+[`ClickhouseAirbyteClient.kt`](src/main/kotlin/io/airbyte/integrations/destination/clickhouse/client/ClickhouseAirbyteClient.kt)
+now calls `EXISTS TABLE` first and only issues `SELECT count(1)` when the table actually exists.
+Previously, per stream per sync the destination probed for a leftover temp table with
+`SELECT count(1) FROM <db>.<squeezed_name><md5>` and read the resulting error as "no leftover
+table"; data was unaffected but ClickHouse logged each miss with a ~30-frame stack trace
+**twice** — hundreds of thousands of log lines a day burying real errors. If code 60 starts
+climbing again on `system.errors`/`system.query_log`, that regression is back.
 
 **Rollback** is re-registering the previous `-replicated-<n-1>` tag. Nothing else to undo:
 these changes are DDL-path behaviour, not schema migrations.

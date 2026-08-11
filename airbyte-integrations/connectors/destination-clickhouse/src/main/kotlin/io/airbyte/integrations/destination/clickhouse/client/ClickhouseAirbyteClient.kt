@@ -238,6 +238,13 @@ class ClickhouseAirbyteClient(
 
     override suspend fun countTable(tableName: TableName): Long? {
         try {
+            // Probe existence with EXISTS TABLE (which never errors) before counting. The status
+            // gatherer calls this for the temp table too, which is absent by design on every sync;
+            // counting an absent table raises UNKNOWN_TABLE server-side, logged with a full stack
+            // trace twice per miss — hundreds of thousands of noise lines/day. See KUEEZ-FORK.md §4.
+            if (!tableExists(tableName)) {
+                return null
+            }
             val sql = sqlGenerator.countTable(tableName, "cnt")
             val response = query(sql)
             val reader: ClickHouseBinaryFormatReader = client.newBinaryFormatReader(response)
