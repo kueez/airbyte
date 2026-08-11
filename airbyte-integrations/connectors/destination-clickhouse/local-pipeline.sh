@@ -53,6 +53,8 @@ error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 # Use home dir so podman VM can access it (macOS /tmp is not shared to podman)
 WORKSPACE_BASE="${PIPELINE_WORKSPACE:-$HOME/airbyte-pipeline}"
 WORKSPACE="$WORKSPACE_BASE/run-$(date +%Y%m%d-%H%M%S)"
+# The config files written below hold DB credentials — keep the workspace owner-only.
+umask 077
 mkdir -p "$WORKSPACE"
 trap 'echo "" && info "Logs at: $WORKSPACE"' EXIT
 info "Workspace: $WORKSPACE"
@@ -65,37 +67,47 @@ require_env() {
 }
 
 # ── Write config files ────────────────────────────────────────────────────────
+# Configs are serialized by python3 (already required below) from env vars rather than
+# interpolated into a heredoc, so credentials containing quotes/backslashes stay valid JSON.
 write_source_config() {
   require_env MYSQL_HOST MYSQL_USER MYSQL_PASSWORD MYSQL_DATABASE
-  cat > "$WORKSPACE/source-config.json" <<EOF
-{
-  "host": "${MYSQL_HOST}",
-  "port": ${MYSQL_PORT},
-  "username": "${MYSQL_USER}",
-  "password": "${MYSQL_PASSWORD}",
-  "database": "${MYSQL_DATABASE}",
-  "replication_method": { "method": "STANDARD" },
-  "ssl_mode": { "mode": "preferred" },
-  "check_privileges": false
-}
-EOF
+  OUT="$WORKSPACE/source-config.json" \
+  P_HOST="$MYSQL_HOST" P_PORT="$MYSQL_PORT" P_USER="$MYSQL_USER" \
+  P_PASS="$MYSQL_PASSWORD" P_DB="$MYSQL_DATABASE" \
+  python3 -c '
+import json, os
+json.dump({
+    "host": os.environ["P_HOST"],
+    "port": int(os.environ["P_PORT"]),
+    "username": os.environ["P_USER"],
+    "password": os.environ["P_PASS"],
+    "database": os.environ["P_DB"],
+    "replication_method": {"method": "STANDARD"},
+    "ssl_mode": {"mode": "preferred"},
+    "check_privileges": False,
+}, open(os.environ["OUT"], "w"), indent=2)
+'
 }
 
 write_dest_config() {
   require_env CLICKHOUSE_HOST CLICKHOUSE_USERNAME CLICKHOUSE_PASSWORD
-  cat > "$WORKSPACE/dest-config.json" <<EOF
-{
-  "host": "${CLICKHOUSE_HOST}",
-  "port": "${CLICKHOUSE_PORT}",
-  "protocol": "http",
-  "database": "${CLICKHOUSE_DATABASE}",
-  "username": "${CLICKHOUSE_USERNAME}",
-  "password": "${CLICKHOUSE_PASSWORD}",
-  "use_replicated_engine": true,
-  "use_on_cluster": true,
-  "cluster_name": ""
-}
-EOF
+  OUT="$WORKSPACE/dest-config.json" \
+  P_HOST="$CLICKHOUSE_HOST" P_PORT="$CLICKHOUSE_PORT" P_DB="$CLICKHOUSE_DATABASE" \
+  P_USER="$CLICKHOUSE_USERNAME" P_PASS="$CLICKHOUSE_PASSWORD" \
+  python3 -c '
+import json, os
+json.dump({
+    "host": os.environ["P_HOST"],
+    "port": os.environ["P_PORT"],
+    "protocol": "http",
+    "database": os.environ["P_DB"],
+    "username": os.environ["P_USER"],
+    "password": os.environ["P_PASS"],
+    "use_replicated_engine": True,
+    "use_on_cluster": True,
+    "cluster_name": "",
+}, open(os.environ["OUT"], "w"), indent=2)
+'
 }
 
 # ── Container helpers ─────────────────────────────────────────────────────────
@@ -296,17 +308,20 @@ do_run() {
   grep -E "INFO|WARN|ERROR|Finished|unflushed|inserted|create|Completed" "$dest_log" | tail -15 || true
 
   echo ""
+  local exit_status=0
   if [[ $PIPE_EXIT -eq 0 && $DEST_EXIT -eq 0 ]]; then
     success "Pipeline completed successfully"
   else
     warn "Source exit: $PIPE_EXIT  Destination exit: $DEST_EXIT"
     warn "Pipeline completed with errors"
+    exit_status=1
   fi
 
   info "Workspace: $WORKSPACE"
   info "  source.log:    $source_log"
   info "  dest.log:      $dest_log"
   info "  catalog.json:  $WORKSPACE/catalog.json"
+  return $exit_status
 }
 
 # ── help ──────────────────────────────────────────────────────────────────────
