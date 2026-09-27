@@ -24,6 +24,7 @@ import io.airbyte.cdk.load.data.TimestampWithTimezoneValue
 import io.airbyte.cdk.load.data.TimestampWithoutTimezoneValue
 import io.airbyte.cdk.load.schema.model.TableName
 import io.airbyte.cdk.load.util.serializeToString
+import io.airbyte.integrations.destination.clickhouse.client.discoverTableSchema
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -43,8 +44,10 @@ class BinaryRowInsertBuffer(
     val tableName: TableName,
     private val clickhouseClient: Client,
 ) {
-    // Initialize the inner buffer
-    private val schema = clickhouseClient.getTableSchema(tableName.name, tableName.namespace)
+    // Initialize the inner buffer.
+    // discoverTableSchema() reads system.columns instead of clickhouseClient.getTableSchema(),
+    // which is broken against ClickHouse server 26.8+ (see ClickhouseSchemaDiscovery.kt).
+    private val schema = clickhouseClient.discoverTableSchema(tableName.namespace, tableName.name)
     @VisibleForTesting internal var inner = InputOutputBuffer()
     @VisibleForTesting
     internal var writer = RowBinaryFormatWriter(inner, schema, ClickHouseFormat.RowBinary)

@@ -132,7 +132,9 @@ class ClickhouseAirbyteClient(
     }
 
     override suspend fun discoverSchema(tableName: TableName): TableSchema {
-        val tableSchema = client.getTableSchema(tableName.name, tableName.namespace)
+        // discoverTableSchema() reads system.columns instead of client.getTableSchema(), which is
+        // broken against ClickHouse server 26.8+ (see ClickhouseSchemaDiscovery.kt).
+        val tableSchema = client.discoverTableSchema(tableName.namespace, tableName.name)
 
         log.info { "Fetch the clickhouse table schema: $tableSchema" }
 

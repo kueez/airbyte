@@ -7,7 +7,7 @@ package io.airbyte.integrations.destination.clickhouse.write.load
 import com.clickhouse.client.api.Client
 import com.clickhouse.client.api.data_formats.RowBinaryFormatWriter
 import com.clickhouse.client.api.insert.InsertResponse
-import com.clickhouse.client.api.metadata.TableSchema
+import com.clickhouse.client.api.query.QueryResponse
 import com.clickhouse.data.ClickHouseFormat
 import io.airbyte.cdk.load.data.AirbyteValue
 import io.airbyte.cdk.load.data.ArrayValue
@@ -44,8 +44,6 @@ import org.junit.jupiter.params.provider.MethodSource
 
 @ExtendWith(MockKExtension::class)
 class BinaryRowInsertBufferTest {
-    @MockK(relaxed = true) lateinit var schema: TableSchema
-
     @MockK lateinit var clickhouseClient: Client
 
     private val tableName =
@@ -58,15 +56,31 @@ class BinaryRowInsertBufferTest {
 
     @BeforeEach
     fun setup() {
+        // The buffer now discovers the schema via system.columns (see ClickhouseSchemaDiscovery.kt),
+        // not clickhouseClient.getTableSchema().
+        val response = mockk<QueryResponse>(relaxed = true)
         every {
-            clickhouseClient.getTableSchema(Fixtures.TEST_NAME, Fixtures.TEST_NAMESPACE)
-        } returns schema
+            clickhouseClient.query(
+                match<String> { it.startsWith("SELECT name, type FROM system.columns") }
+            )
+        } returns CompletableFuture.completedFuture(response)
+        val rows = ArrayDeque(List(1) { emptyMap<String, Any>() })
+        every { clickhouseClient.newBinaryFormatReader(response) } returns
+            mockk(relaxed = true) {
+                every { next() } answers { rows.removeFirstOrNull() }
+                every { getString("name") } returns "field1"
+                every { getString("type") } returns "String"
+            }
         buffer = BinaryRowInsertBuffer(tableName, clickhouseClient)
     }
 
     @Test
     fun `initializes the ch row binary writer`() {
-        verify { clickhouseClient.getTableSchema(Fixtures.TEST_NAME, Fixtures.TEST_NAMESPACE) }
+        verify {
+            clickhouseClient.query(
+                match<String> { it.startsWith("SELECT name, type FROM system.columns") }
+            )
+        }
 
         assertEquals(ClickHouseFormat.RowBinary, buffer.writer.format)
     }

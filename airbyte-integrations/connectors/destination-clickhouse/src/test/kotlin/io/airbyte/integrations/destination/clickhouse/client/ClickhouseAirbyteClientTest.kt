@@ -230,6 +230,15 @@ class ClickhouseAirbyteClientTest {
                     }
             }
 
+        // discoverSchema now reads system.columns; a table with no columns (empty reader) is
+        // missing the Airbyte internal columns and must raise ConfigErrorException.
+        val response = mockk<QueryResponse>(relaxed = true)
+        coEvery {
+            client.query(match { it.startsWith("SELECT name, type FROM system.columns") })
+        } returns CompletableFuture.completedFuture(response)
+        every { client.newBinaryFormatReader(response) } returns
+            mockk(relaxed = true) { every { next() } returns null }
+
         assertThrows<ConfigErrorException> {
             clickhouseAirbyteClient.ensureSchemaMatches(stream, finalTableName, columnMapping)
         }
@@ -374,6 +383,61 @@ class ClickhouseAirbyteClientTest {
         val result = clickhouseAirbyteClient.countTable(table)
 
         Assertions.assertEquals(42L, result)
+    }
+
+    @Test
+    fun `discoverSchema reads system columns instead of the fragile DESCRIBE TSKV parser`() =
+        runTest {
+            // Regression guard: client.getTableSchema() parses DESCRIBE ... FORMAT TSKV through
+            // java.util.Properties and throws on the Replicated/on-cluster engine. discoverSchema
+            // must read system.columns via the binary reader instead.
+            val table = TableName("db", "real_table")
+            val response = mockk<QueryResponse>(relaxed = true)
+            coEvery {
+                client.query(match { it.startsWith("SELECT name, type FROM system.columns") })
+            } returns CompletableFuture.completedFuture(response)
+            val names =
+                listOf(
+                        Meta.COLUMN_NAME_AB_RAW_ID,
+                        Meta.COLUMN_NAME_AB_EXTRACTED_AT,
+                        Meta.COLUMN_NAME_AB_META,
+                        Meta.COLUMN_NAME_AB_GENERATION_ID,
+                        "id",
+                    )
+                    .iterator()
+            val types = listOf("String", "DateTime64(3)", "JSON", "Int64", "Int64").iterator()
+            val rows = ArrayDeque(List(5) { emptyMap<String, Any>() })
+            every { client.newBinaryFormatReader(response) } returns
+                mockk(relaxed = true) {
+                    every { next() } answers { rows.removeFirstOrNull() }
+                    every { getString("name") } answers { names.next() }
+                    every { getString("type") } answers { types.next() }
+                }
+
+            val schema = clickhouseAirbyteClient.discoverSchema(table)
+
+            Assertions.assertEquals(
+                TableSchema(mapOf("id" to ColumnType("Int64", false))),
+                schema,
+            )
+        }
+
+    @Test
+    fun `discoverSchema rejects a table missing Airbyte columns`() = runTest {
+        val table = TableName("db", "foreign_table")
+        val response = mockk<QueryResponse>(relaxed = true)
+        coEvery {
+            client.query(match { it.startsWith("SELECT name, type FROM system.columns") })
+        } returns CompletableFuture.completedFuture(response)
+        val rows = ArrayDeque(List(1) { emptyMap<String, Any>() })
+        every { client.newBinaryFormatReader(response) } returns
+            mockk(relaxed = true) {
+                every { next() } answers { rows.removeFirstOrNull() }
+                every { getString("name") } returns "id"
+                every { getString("type") } returns "Int64"
+            }
+
+        assertThrows<ConfigErrorException> { clickhouseAirbyteClient.discoverSchema(table) }
     }
 
     companion object {
