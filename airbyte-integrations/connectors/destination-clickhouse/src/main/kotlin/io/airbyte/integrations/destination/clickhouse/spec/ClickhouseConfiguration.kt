@@ -23,6 +23,7 @@ data class ClickhouseConfiguration(
     val useReplicatedEngine: Boolean,
     val useOnCluster: Boolean,
     val clusterName: String,
+    val asyncInsert: Boolean = true,
 ) : DestinationConfiguration() {
     val endpoint = "$protocol://$hostname:$port"
     val resolvedDatabase = database.ifEmpty { Defaults.DATABASE_NAME }
@@ -59,6 +60,7 @@ class ClickhouseConfigurationFactory :
             useReplicatedEngine = pojo.useReplicatedEngine ?: true,
             useOnCluster = pojo.useOnCluster ?: true,
             clusterName = pojo.clusterName ?: "",
+            asyncInsert = pojo.asyncInsert ?: true,
         )
     }
 
@@ -89,6 +91,8 @@ class ClickhouseConfigurationFactory :
                 overrides.getOrDefault("use_on_cluster", (spec.useOnCluster ?: true).toString()).toBoolean(),
             clusterName =
                 overrides.getOrDefault("cluster_name", spec.clusterName ?: ""),
+            asyncInsert =
+                overrides.getOrDefault("async_insert", (spec.asyncInsert ?: true).toString()).toBoolean(),
         )
     }
 }
