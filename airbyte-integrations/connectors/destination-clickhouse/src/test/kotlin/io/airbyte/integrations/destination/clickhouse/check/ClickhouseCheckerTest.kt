@@ -70,6 +70,21 @@ class ClickhouseCheckerTest {
     }
 
     @Test
+    fun `check with replicated engine - creates ReplicatedMergeTree check table`() {
+        val replicatedChecker =
+            ClickhouseChecker(clock, Fixtures.config(useReplicatedEngine = true), client)
+
+        replicatedChecker.check()
+
+        verify {
+            client.execute(
+                "CREATE TABLE IF NOT EXISTS ${config.database}.${replicatedChecker.tableName} (test UInt8) ENGINE = ReplicatedMergeTree() ORDER BY ()",
+                any<CommandSettings>(),
+            )
+        }
+    }
+
+    @Test
     fun `check happy path - table name differs between instantiations to prevent collision`() {
         every { clock.millis() } returns 123L
         val checker1 = ClickhouseChecker(clock, config, client)
@@ -153,6 +168,7 @@ class ClickhouseCheckerTest {
             password: String = "password",
             enableJson: Boolean = false,
             recordWindow: Long = 42000,
+            useReplicatedEngine: Boolean = false,
         ): ClickhouseConfiguration =
             ClickhouseConfiguration(
                 hostname = hostname,
@@ -164,7 +180,7 @@ class ClickhouseCheckerTest {
                 enableJson = enableJson,
                 tunnelConfig = SshNoTunnelMethod,
                 recordWindowSize = recordWindow,
-                useReplicatedEngine = false,
+                useReplicatedEngine = useReplicatedEngine,
                 useOnCluster = false,
                 clusterName = "",
             )

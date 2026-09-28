@@ -33,9 +33,14 @@ class ClickhouseChecker(
             serverSetting("distributed_ddl_task_timeout", "30")
         }
 
+        // Match the engine real tables get (see ClickhouseSqlGenerator.createTable): inside a
+        // Replicated database the check table must be ReplicatedMergeTree, otherwise the probe
+        // exercises a different DDL path than the one syncs actually use.
+        val engine = if (config.useReplicatedEngine) "ReplicatedMergeTree()" else "MergeTree"
+
         client
             .execute(
-                "CREATE TABLE IF NOT EXISTS $resolvedTableName (test UInt8) ENGINE = MergeTree ORDER BY ()",
+                "CREATE TABLE IF NOT EXISTS $resolvedTableName (test UInt8) ENGINE = $engine ORDER BY ()",
                 ddlSettings,
             )
             .get(60, TimeUnit.SECONDS)
