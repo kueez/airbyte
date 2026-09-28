@@ -92,9 +92,14 @@ ls build/distributions/
 # 3. amd64 image — the OKE nodes are x86; building on an Apple Silicon Mac
 #    without --platform produces an arm64 image that will CrashLoopBackOff.
 docker buildx build --platform linux/amd64 \
+  --build-arg SOURCE_COMMIT=$(git rev-parse HEAD) \
   -t <registry>/destination-clickhouse:2.1.23-replicated-<n> \
   --push .
 ```
+
+`SOURCE_COMMIT` stamps the image with `org.opencontainers.image.revision` so you can trace a
+running tag back to a commit (`docker inspect <img> --format '{{.Config.Labels}}'`). CI passes
+it automatically (see §5).
 
 [`Dockerfile`](Dockerfile) is runtime-only: it layers the tarball onto
 `airbyte/java-connector-base` (pinned by digest in `metadata.yaml` →
@@ -211,14 +216,21 @@ these changes are DDL-path behaviour, not schema migrations.
 
 Worth knowing before you rely on it:
 
-1. **No CI.** Nothing builds, tests, scans or pushes this image automatically. A build happens
-   because a human ran the commands in §2.
+1. **CI builds + tests + pushes, but does not release.** [`.devops/ci/Jenkinsfile-oci`](.devops/ci/Jenkinsfile-oci)
+   (RND-12175) runs the connector unit tests, builds the distribution, and pushes a
+   commit-stamped image to OCIR as `$CI_IMAGE_REGISTRY/destination-clickhouse:<branch>-<build>`
+   on every push. It does **not** cut a `-replicated-<n>` release tag or register the image — that
+   promotion (and the §3 re-registration) is still a deliberate manual/Terraform step. Point the
+   Jenkins job at this file (`airbyte-integrations/connectors/destination-clickhouse/.devops/ci/Jenkinsfile-oci`).
+   This repo is public, so the OCIR tenancy path is **not** hardcoded — it comes from the Jenkins
+   env var `CI_IMAGE_REGISTRY` (set it on the job/folder).
 2. **No upstream PR.** The fork drifts from `airbytehq/airbyte` (fork point: Feb 2026). Rebasing
    onto a newer upstream is a real merge exercise, particularly around the CDK commits.
-3. **Image provenance is a local machine.** Tags do not carry a source-commit label. Record which
-   commit produced which `-replicated-<n>` tag when you push, or add
-   `--label org.opencontainers.image.revision=$(git rev-parse HEAD)` to the buildx command and
-   make that the habit.
+3. **Image provenance.** Images now carry `org.opencontainers.image.revision` via the Dockerfile's
+   `SOURCE_COMMIT` build-arg — CI sets it automatically, and the manual buildx command in §2.3 sets
+   it from `git rev-parse HEAD`. Check it with `docker inspect <img> --format '{{.Config.Labels}}'`.
+   Still record which commit produced which `-replicated-<n>` **release** tag, since that promotion
+   is manual.
 4. **Image pull auth is worth verifying** before you scale or replace nodes. Confirm the cluster
    can actually pull the tag onto a node that has never run it, rather than assuming a cached
    image means a working pull path.

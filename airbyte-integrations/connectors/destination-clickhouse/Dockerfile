@@ -10,6 +10,14 @@ FROM --platform=linux/amd64 docker.io/airbyte/java-connector-base:2.0.1@sha256:e
 
 ARG CONNECTOR_NAME=destination-clickhouse
 
+# Source-commit stamp for image provenance (RND-12175). CI passes the git SHA via
+# --build-arg SOURCE_COMMIT=<sha>; the manual build should pass $(git rev-parse HEAD).
+# Empty when unset so the manual/local build still works.
+ARG SOURCE_COMMIT=""
+ARG IMAGE_SOURCE=""
+LABEL org.opencontainers.image.revision=$SOURCE_COMMIT
+LABEL org.opencontainers.image.source=$IMAGE_SOURCE
+
 RUN chmod +x /airbyte/base.sh /airbyte/javabase.sh && \
     chown airbyte:airbyte /airbyte/base.sh /airbyte/javabase.sh /airbyte/dd-java-agent.jar
 
