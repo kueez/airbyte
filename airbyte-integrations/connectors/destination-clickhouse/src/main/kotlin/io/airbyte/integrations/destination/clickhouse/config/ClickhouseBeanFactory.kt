@@ -74,14 +74,16 @@ class ClickhouseBeanFactory {
                 .serverSetting("distributed_ddl_task_timeout", "300")
                 .serverSetting("distributed_ddl_output_mode", "null_status_on_timeout_only_active")
 
+        // Set async_insert explicitly in BOTH states, not just when enabled: some ClickHouse
+        // client-v2 builds hardcode async_insert, so turning the option off must send
+        // async_insert = 0 to actually get synchronous inserts back.
+        builder.serverSetting("async_insert", if (config.asyncInsert) "1" else "0")
         if (config.asyncInsert) {
-            // Let the server coalesce our many small inserts (median ~410 rows, p10 = 3) into
-            // fewer parts instead of one part per insert. wait_for_async_insert = 1 keeps each
-            // insert synchronous from our side, so a batch is durably flushed before the CDK
-            // advances sync state.
-            builder
-                .serverSetting("async_insert", "1")
-                .serverSetting("wait_for_async_insert", "1")
+            // Coalesce our many small inserts (median ~410 rows, p10 = 3) into fewer parts
+            // instead of one part per insert. wait_for_async_insert = 1 keeps each insert
+            // synchronous from our side, so a batch is durably flushed before the CDK advances
+            // sync state.
+            builder.serverSetting("wait_for_async_insert", "1")
         }
 
         if (config.enableJson) {
