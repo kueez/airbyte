@@ -36,6 +36,7 @@ sealed class ClickhouseSpecification : ConfigurationSpecification() {
     abstract val useReplicatedEngine: Boolean?
     abstract val useOnCluster: Boolean?
     abstract val clusterName: String?
+    abstract val asyncInsert: Boolean?
 }
 
 @Singleton
@@ -142,6 +143,16 @@ class ClickhouseSpecificationOss : ClickhouseSpecification() {
     @get:JsonProperty("cluster_name")
     @get:JsonSchemaInject(json = """{"order": 11, "default": ""}""")
     override val clusterName: String? = ""
+
+    @get:JsonSchemaTitle("Async Insert")
+    @get:JsonPropertyDescription(
+        "Use ClickHouse async_insert so the server coalesces many small inserts into fewer " +
+            "parts, relieving part-explosion from frequent small syncs. wait_for_async_insert " +
+            "stays on, so an insert still returns only once its batch is durably flushed."
+    )
+    @get:JsonProperty("async_insert")
+    @get:JsonSchemaInject(json = """{"order": 12, "default": true}""")
+    override val asyncInsert: Boolean? = true
 }
 
 @Singleton
@@ -248,6 +259,16 @@ open class ClickhouseSpecificationCloud : ClickhouseSpecification() {
     @get:JsonProperty("cluster_name")
     @get:JsonSchemaInject(json = """{"order": 11, "default": ""}""")
     override val clusterName: String? = ""
+
+    @get:JsonSchemaTitle("Async Insert")
+    @get:JsonPropertyDescription(
+        "Use ClickHouse async_insert so the server coalesces many small inserts into fewer " +
+            "parts, relieving part-explosion from frequent small syncs. wait_for_async_insert " +
+            "stays on, so an insert still returns only once its batch is durably flushed."
+    )
+    @get:JsonProperty("async_insert")
+    @get:JsonSchemaInject(json = """{"order": 12, "default": true}""")
+    override val asyncInsert: Boolean? = true
 }
 
 enum class ClickhouseConnectionProtocol(@get:JsonValue val value: String) {

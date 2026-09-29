@@ -1,0 +1,140 @@
+#!groovy
+
+// CI for the destination-clickhouse (kueez fork) connector image. RND-12175.
+//
+// On push: run the connector unit tests, build the connector distribution tarball, then
+// build the runtime image (stamped with the source commit + repo) and push it to OCIR.
+// This is BUILD + TEST + PUSH only — it does NOT deploy or register the image. Registration
+// onto the Airbyte custom destination definition is a separate step (the airbytehq Terraform
+// provider in airbyte-pipelines). See KUEEZ-FORK.md.
+//
+// Why this is a bespoke pipeline rather than a k8s_taskBuildKanikoDeploy() one-liner: the
+// connector build is two-step — Gradle compiles the whole monorepo into a tarball, then a thin
+// runtime image layers that tarball. The shared helper assumes a single-stage source build, so
+// here Gradle runs in its own JDK container and Kaniko only layers the (already-built) tarball.
+//
+// This repo is PUBLIC. Kueez-specific infra values (the OCIR tenancy path) are NOT hardcoded
+// here (RND-12175) — the registry comes from the Jenkins env var CI_IMAGE_REGISTRY (the same
+// var the shared Kaniko lib reads). Set it as a Jenkins global/folder env var.
+
+def CONNECTOR_DIR = 'airbyte-integrations/connectors/destination-clickhouse'
+def GRADLE_MODULE = ':airbyte-integrations:connectors:destination-clickhouse'
+
+// kube-tools: git/oci/kubectl. gradle: the JDK the connector builds on (matches local dev,
+// temurin 21). kaniko: builds + pushes the runtime image.
+def podYaml = '''
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: jenkins
+  labels:
+    app: jenkinsAgent
+    qubex.ai/qscale: "true"
+spec:
+  containers:
+  - name: kube-tools
+    image: 875738510361.dkr.ecr.us-east-1.amazonaws.com/jenkins:kube-tools-27112025
+    command: ["sleep"]
+    args: ["99d"]
+  - name: gradle
+    image: eclipse-temurin:21-jdk
+    command: ["sleep"]
+    args: ["99d"]
+    env:
+    - name: GRADLE_OPTS
+      value: "-Dorg.gradle.jvmargs=-Xmx6g -Dorg.gradle.daemon=false"
+    resources:
+      requests: {memory: "8Gi", cpu: "2"}
+      limits:   {memory: "8Gi", cpu: "4"}
+    volumeMounts:
+    - name: gradle-cache
+      mountPath: /root/.gradle
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug
+    command: ["sleep"]
+    args: ["99d"]
+    resources:
+      requests: {memory: "2Gi", cpu: "1"}
+      limits:   {memory: "3Gi", cpu: "2"}
+  volumes:
+  # ponytail: emptyDir gradle cache -> deps re-download each build. Swap for a PVC if CI wall-time matters.
+  - name: gradle-cache
+    emptyDir: {}
+'''
+
+properties([disableConcurrentBuilds()])
+
+podTemplate(yaml: podYaml) {
+  node(POD_LABEL) {
+    def sha
+    def sourceUrl
+    def branchTag
+    def image
+    def registryHost
+
+    stage('Checkout') {
+      container('kube-tools') {
+        if (!env.CI_IMAGE_REGISTRY) {
+          error 'CI_IMAGE_REGISTRY env var is required (the OCIR tenancy path); set it on the Jenkins job/folder.'
+        }
+        image = "${env.CI_IMAGE_REGISTRY}/destination-clickhouse"
+        registryHost = env.CI_IMAGE_REGISTRY.tokenize('/')[0]
+
+        checkout scm
+        sha = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+        sourceUrl = sh(script: 'git config --get remote.origin.url', returnStdout: true).trim()
+        // Branch names carry slashes (kueez/destination-clickhouse-...); Docker tags can't.
+        // Suffix a short hash of the RAW branch name so two branches that sanitize to the same
+        // string can't collide on the same image tag (including -latest) and silently overwrite.
+        def branchHash = sh(script: 'printf "%s" "$BRANCH_NAME" | sha1sum | cut -c1-8', returnStdout: true).trim()
+        branchTag = env.BRANCH_NAME.replaceAll(/[^A-Za-z0-9_.-]/, '-') + '-' + branchHash
+      }
+    }
+
+    stage('Unit tests') {
+      container('gradle') {
+        sh "./gradlew --no-daemon ${GRADLE_MODULE}:test"
+      }
+      // Fail loudly if no reports were produced — in a CI gate, "no tests ran" must not pass.
+      junit allowEmptyResults: false, testResults: "${CONNECTOR_DIR}/build/test-results/test/*.xml"
+    }
+
+    stage('Build distribution') {
+      container('gradle') {
+        // Emits build/distributions/airbyte-app.tar, which the runtime Dockerfile COPYs.
+        sh "./gradlew --no-daemon ${GRADLE_MODULE}:distTar -x test"
+      }
+    }
+
+    stage('Build & push image') {
+      container('kaniko') {
+        // OCIR push auth: same oci_auth_token credential the shared Kaniko pipeline uses.
+        // Secrets stay as shell env refs (\$DOCKER_*) so Groovy never interpolates them; only
+        // the non-secret registry host is interpolated in.
+        withCredentials([usernamePassword(credentialsId: 'oci_auth_token',
+                                          usernameVariable: 'DOCKER_USER',
+                                          passwordVariable: 'DOCKER_PASS')]) {
+          sh """
+            mkdir -p /kaniko/.docker
+            AUTH=\$(printf '%s:%s' "\$DOCKER_USER" "\$DOCKER_PASS" | base64 | tr -d '\\n')
+            printf '{"auths":{"${registryHost}":{"auth":"%s"}}}' "\$AUTH" > /kaniko/.docker/config.json
+          """
+        }
+        // Context is the connector dir (where the tarball is) — the runtime Dockerfile only
+        // needs that tarball, not the whole monorepo.
+        sh """
+          /kaniko/executor \\
+            --context=${env.WORKSPACE}/${CONNECTOR_DIR} \\
+            --dockerfile=${env.WORKSPACE}/${CONNECTOR_DIR}/Dockerfile \\
+            --build-arg=SOURCE_COMMIT=${sha} \\
+            --build-arg=IMAGE_SOURCE=${sourceUrl} \\
+            --destination=${image}:${branchTag}-${env.BUILD_NUMBER} \\
+            --destination=${image}:${branchTag}-latest \\
+            --cache=true --cache-repo=${env.CI_IMAGE_REGISTRY}/kaniko-cache \\
+            --single-snapshot
+        """
+        echo "Pushed ${image}:${branchTag}-${env.BUILD_NUMBER} (revision ${sha})"
+      }
+    }
+  }
+}
